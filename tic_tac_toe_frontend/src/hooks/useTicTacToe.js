@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { logEvent, getAuditLog } from '../utils/audit';
 import { AppError } from '../utils/errors';
+import { chooseBestMove } from '../utils/ai';
 
 /**
  * Determine winner of a 3x3 Tic Tac Toe board.
@@ -25,8 +26,8 @@ export function computeWinner(board) {
 
 /**
  * PUBLIC_INTERFACE
- * useTicTacToe manages board state, current player, win/draw detection, and scores.
- * Validates inputs and ignores invalid moves gracefully.
+ * useTicTacToe manages board state, current player, win/draw detection, scores,
+ * and optional AI opponent orchestration.
  *
  * Exposes:
  * - board: string[] size 9
@@ -34,9 +35,17 @@ export function computeWinner(board) {
  * - winner: 'X'|'O'|null
  * - isDraw: boolean
  * - scores: {X:number,O:number,ties:number}
- * - makeMove(index:number): boolean (true if move applied)
+ * - makeMove(index:number, opts?: { reasonOverride?:string, metadata?:object, initiatedBy?:'HUMAN'|'AI' }): boolean
  * - resetGame(reason?:string): void
  * - computeWinner(board): function re-exported above
+ * - mode: 'HUMAN_VS_HUMAN'|'HUMAN_VS_AI'
+ * - setMode: (v) => void
+ * - aiPlaysAs: 'X'|'O'
+ * - setAiPlaysAs: (v) => void
+ * - difficulty: { strategy:'quick'|'minimax', depth?:number }
+ * - setDifficulty: (v) => void
+ * - isAiThinking: boolean
+ * - getAuditLog: () => any[]
  */
 export function useTicTacToe() {
   const [board, setBoard] = useState(Array(9).fill(null));
@@ -52,6 +61,12 @@ export function useTicTacToe() {
       return { X: 0, O: 0, ties: 0 };
     }
   });
+
+  // AI related state
+  const [mode, setMode] = useState('HUMAN_VS_HUMAN'); // or 'HUMAN_VS_AI'
+  const [aiPlaysAs, setAiPlaysAs] = useState('O'); // default AI is O
+  const [difficulty, setDifficulty] = useState({ strategy: 'quick', depth: 9 });
+  const [isAiThinking, setIsAiThinking] = useState(false);
 
   const lastSnapshot = useRef({ board, currentPlayer, scores });
 
@@ -93,8 +108,11 @@ export function useTicTacToe() {
   /**
    * Attempt a move. Validate index and cell emptiness. No-op if invalid or game over.
    * Returns true if the move was applied.
+   *
+   * @param {number} index
+   * @param {{reasonOverride?:string, metadata?:object, initiatedBy?:'HUMAN'|'AI'}} [opts]
    */
-  const makeMove = useCallback((index) => {
+  const makeMove = useCallback((index, opts = undefined) => {
     const before = { board: [...board], currentPlayer, scores: { ...scores } };
     if (winner || isDraw) return false;
     if (typeof index !== 'number' || index < 0 || index > 8) return false;
@@ -107,6 +125,7 @@ export function useTicTacToe() {
 
     const outcome = updateOutcome(nextBoard);
 
+    // Toggle to next player if game continues
     if (!outcome.winner && !outcome.isDraw) {
       const nextPlayer = currentPlayer === 'X' ? 'O' : 'X';
       setCurrentPlayer(nextPlayer);
@@ -124,14 +143,51 @@ export function useTicTacToe() {
       action: 'MOVE',
       before,
       after,
-      reason: `Player ${currentPlayer} moved at index ${index}`,
+      reason: opts?.reasonOverride ?? `Player ${currentPlayer} moved at index ${index}`,
       userId: 'anonymous',
-      metadata: { index, outcome },
+      metadata: { index, outcome, ...(opts?.metadata ?? {}) },
     });
 
     lastSnapshot.current = after;
+
+    // If AI should move next, schedule it
+    if (!outcome.winner && !outcome.isDraw && mode === 'HUMAN_VS_AI') {
+      const nextToMove = after.currentPlayer;
+      if (nextToMove === aiPlaysAs) {
+        setIsAiThinking(true);
+        const thinkDelay = 300;
+        setTimeout(() => {
+          try {
+            const idx = chooseBestMove(
+              nextBoard,
+              aiPlaysAs,
+              {
+                strategy: difficulty?.strategy || 'quick',
+                depth: difficulty?.depth ?? 9,
+                computeWinner,
+              }
+            );
+            if (idx >= 0) {
+              // AI's move. makeMove uses currentPlayer; after previous call it should already be AI's turn.
+              makeMove(idx, {
+                reasonOverride: `AI (${aiPlaysAs}) moved at index ${idx}`,
+                metadata: {
+                  strategy: difficulty?.strategy || 'quick',
+                  depth: difficulty?.depth ?? 9,
+                  initiatedBy: 'AI'
+                },
+                initiatedBy: 'AI'
+              });
+            }
+          } finally {
+            setIsAiThinking(false);
+          }
+        }, thinkDelay);
+      }
+    }
+
     return true;
-  }, [board, currentPlayer, scores, winner, isDraw, updateOutcome]);
+  }, [board, currentPlayer, scores, winner, isDraw, updateOutcome, mode, aiPlaysAs, difficulty]);
 
   /**
    * Reset the game to an empty board while keeping scores. Optionally provide reason.
@@ -142,6 +198,7 @@ export function useTicTacToe() {
     setCurrentPlayer('X');
     setWinner(null);
     setIsDraw(false);
+    setIsAiThinking(false);
     const after = { board: Array(9).fill(null), currentPlayer: 'X', scores: { ...scores } };
 
     logEvent({
@@ -166,8 +223,16 @@ export function useTicTacToe() {
       resetGame,
       computeWinner,
       getAuditLog,
+      // AI additions
+      mode,
+      setMode,
+      aiPlaysAs,
+      setAiPlaysAs,
+      difficulty,
+      setDifficulty,
+      isAiThinking,
     }),
-    [board, currentPlayer, winner, isDraw, scores, makeMove, resetGame]
+    [board, currentPlayer, winner, isDraw, scores, makeMove, resetGame, mode, aiPlaysAs, difficulty, isAiThinking]
   );
 
   return api;

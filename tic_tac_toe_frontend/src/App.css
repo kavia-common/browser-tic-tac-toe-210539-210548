@@ -69,6 +69,7 @@
   box-shadow: 0 6px 18px rgba(37,99,235,0.25);
   transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
   outline: none;
+  appearance: none;
 }
 
 .ocean-btn:hover {
@@ -208,6 +209,10 @@
 /* Controls */
 .controls {
   padding-top: 8px;
+}
+.controls select.ocean-btn,
+.controls input.ocean-btn {
+  color: white;
 }
 
 .restart-btn {

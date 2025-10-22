@@ -21,9 +21,9 @@ function rc(index) {
  * @param {boolean} props.isDraw - whether the game is a draw
  * @param {(index:number)=>void} props.onPlay - callback to attempt a move
  */
-export default function Board({ board, currentPlayer, winner, isDraw, onPlay }) {
+export default function Board({ board, currentPlayer, winner, isDraw, onPlay, disabled: disabledProp = undefined }) {
   const containerRef = useRef(null);
-  const disabled = Boolean(winner) || isDraw;
+  const disabled = typeof disabledProp === 'boolean' ? disabledProp : (Boolean(winner) || isDraw);
 
   const squaresRefs = useRef(Array.from({ length: 9 }, () => React.createRef()));
 
@@ -79,8 +79,9 @@ export default function Board({ board, currentPlayer, winner, isDraw, onPlay }) 
   const gridAriaLabel = useMemo(() => {
     if (winner) return `Board, Game Over. Player ${winner} wins.`;
     if (isDraw) return 'Board, Game Over. Draw.';
+    if (disabled && !winner && !isDraw) return `Board, Player ${currentPlayer}'s turn. Input temporarily disabled.`;
     return `Board, Player ${currentPlayer}'s turn`;
-  }, [winner, isDraw, currentPlayer]);
+  }, [winner, isDraw, currentPlayer, disabled]);
 
   return (
     <div className="board-surface">

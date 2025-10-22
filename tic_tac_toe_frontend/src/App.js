@@ -3,6 +3,7 @@ import './App.css';
 import './index.css';
 import Board from './components/Board';
 import Scoreboard from './components/Scoreboard';
+import Controls from './components/Controls';
 import { useTicTacToe } from './hooks/useTicTacToe';
 import { logEvent } from './utils/audit';
 import { AppError, safeGuard } from './utils/errors';
@@ -21,6 +22,14 @@ function App() {
     scores,
     makeMove,
     resetGame,
+    // AI extensions
+    mode,
+    setMode,
+    aiPlaysAs,
+    setAiPlaysAs,
+    difficulty,
+    setDifficulty,
+    isAiThinking,
   } = useTicTacToe();
 
   const [theme, setTheme] = useState('light');
@@ -34,8 +43,13 @@ function App() {
   const statusMessage = useMemo(() => {
     if (winner) return `Player ${winner} wins!`;
     if (isDraw) return 'Draw! No more moves.';
+    if (mode === 'HUMAN_VS_AI') {
+      const who = currentPlayer === aiPlaysAs ? 'AI' : 'Human';
+      if (isAiThinking && who === 'AI') return `AI is thinking…`;
+      return `Player ${currentPlayer}'s turn (${who})`;
+    }
     return `Player ${currentPlayer}'s turn`;
-  }, [winner, isDraw, currentPlayer]);
+  }, [winner, isDraw, currentPlayer, mode, aiPlaysAs, isAiThinking]);
 
   useEffect(() => {
     if (statusRef.current) {
@@ -102,6 +116,7 @@ function App() {
           currentPlayer={currentPlayer}
           winner={winner}
           isDraw={isDraw}
+          disabled={Boolean(winner) || isDraw || isAiThinking}
           onPlay={(index) =>
             safeGuard(() => {
               const moved = makeMove(index);
@@ -113,15 +128,16 @@ function App() {
           }
         />
 
-        <div className="controls">
-          <button
-            className="ocean-btn restart-btn"
-            onClick={handleRestart}
-            aria-label="Restart game"
-          >
-            Restart
-          </button>
-        </div>
+        <Controls
+          mode={mode}
+          setMode={setMode}
+          aiPlaysAs={aiPlaysAs}
+          setAiPlaysAs={setAiPlaysAs}
+          difficulty={difficulty}
+          setDifficulty={setDifficulty}
+          onRestart={handleRestart}
+          isAiThinking={isAiThinking}
+        />
       </main>
 
       <footer className="app-footer">
